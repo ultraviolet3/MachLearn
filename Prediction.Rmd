@@ -1,0 +1,113 @@
+---
+title: "Practical Machine Learning- Accelerometer Analysis"
+output: html_document
+---
+**Executive Summary**
+Objective of this analysis is to quantify how effectively the 6 participants of this research used the accelerometer belt, forearm, arm, and dumbell equipments.
+
+In short the results of the analysis from data set provided for this purpose, it seems that based on the data provided only accelerometer belt_z, dumbbell_x, dumbbell_y, dumbbell_z, forearm_x are the key variables amongst other non-accelerometer variable. To quantify the accelerometer variables forming part of the model contribution can be said to be in the range of of 37% to 52%. 
+
+**Assumption**: The results of the model is entirely based on the assumption that the values for the outcome variable (Classe) in the training data set was determined with at least 95% accuracy and the probability of type 1 & type 2 errors were minimal if not zero.
+```{r echo=FALSE,message=FALSE, warning=FALSE,comment=" ",tidy=TRUE,strip.white=FALSE,collapse=TRUE}
+#libraries
+  library(knitr)
+  library(plyr)
+  library(dplyr)
+  library(MASS)
+  library(car)
+  library(pwr)
+  library(corrplot)
+  library(AppliedPredictiveModeling)
+  library(caret)
+  library(dismo)
+  library(gbm)
+  library(ElemStatLearn)
+  library(pgmm)
+  library(forecast)
+  library(randomForest)
+  library(e1071)
+  library(psych)
+  library(ParallelForest)
+  library(doParallel)
+```
+**Loading data:** Downloading both train and test data
+```{r echo=TRUE,message=FALSE, warning=FALSE,comment=" ",tidy=TRUE,strip.white=FALSE,collapse=TRUE}
+  Loading=function(trainf,testf) {
+    wd<<-getwd()
+    fil=trainf
+    fil1=testf
+    file=paste(wd,fil,sep="/")
+    file1=paste(wd,fil1,sep="/")
+    if(!file.exists(file)) {
+      download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",file)}
+    
+    if(!file.exists(file1)) {
+      download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",file1)}
+    trainfull<<-data.frame(read.csv(file,header=T,sep=",",stringsAsFactors = T, na.strings=c("?",NA,"NA"," ",NULL,"#DIV/0!"), blank.lines.skip = T))
+    testfull<<-data.frame(read.csv(file1,header=T,sep=",",stringsAsFactors = T, na.strings=c("?",NA,"NA"," ",NULL,"#DIV/0!"), blank.lines.skip = T))}
+```
+**Preprocessing train:**  Function to preprocess the data
+- Removing NA, data, time fields and total fields  as they do not bear any value in determining the predictive model. 
+- Determining the Zero & near zero values
+```{r echo=TRUE,message=FALSE, warning=FALSE,comment=" ",tidy=TRUE,strip.white=FALSE,collapse=TRUE}
+  pprocess=function (data) {
+    pstat=data.frame()
+    ncol(data)
+    data= data[ , ! apply(data, 2 , function(x) any(is.na(x)) ) ]
+    data1<<-subset(data, select = -c(X,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window,total_accel_arm,total_accel_belt,total_accel_dumbbell,total_accel_forearm))
+    ncols <- ncol(data1)
+    row=nrow(data1)
+    preProcess(data1[,-ncols], method='pca',thresh=0.95)
+    datanzv=nearZeroVar(data1, saveMetrics= TRUE)
+    pstat=length(which(datanzv$zeroVar =="TRUE"))
+    pstat=cbind(pstat,length(which(datanzv$nzv %in% "TRUE")))
+    colnames(pstat)=c("#-of zero var","#-near zero var")
+    print(pstat)}
+```
+**Training data:** Function to create train & test folds. Partitioning the training data into 55% training data and 45% as test data. Activating parallel processing of the training process to accommodate the data load. Using Random forest to train the data for prediction.
+```{r echo=TRUE,message=FALSE, warning=FALSE,comment=" ",tidy=TRUE,strip.white=FALSE,collapse=TRUE}
+  traindata=function(pdata=data1) {
+    gc()
+    mkcluster=makeCluster(detectCores() - 1,methods=FALSE)
+    registerDoParallel(mkcluster)
+    trctrl=trainControl(classProbs=TRUE,savePredictions=TRUE,allowParallel=TRUE,method="oob")
+    
+    trainfold=createDataPartition(data1$classe,10,p=.55,list=FALSE)
+    train=data1[trainfold, ]
+    test=data1[-trainfold, ]
+    
+    tread<<-train(classe ~ ., data=train, method="rf",trControl=trctrl)
+    stopCluster(mkcluster)
+    tread$bestTune
+    tread$results}
+```
+**Modelling & predicting:** Function to predict data using the trained data as the base.
+```{r echo=TRUE,message=FALSE, warning=FALSE,comment=" ",tidy=TRUE,strip.white=FALSE,collapse=TRUE}
+    predictdata=function(sdata=data1) {
+    predictdata <- predict(tread, sdata)
+    sdata=cbind(sdata,predictdata)
+    matrix=confusionMatrix(predictdata, sdata$predictdata)
+    }
+```
+**Predicting using the models:** Running tests on training data to fit a model and then on the test data. Storing the predicted values in the variable "predictdata"
+```{r echo=TRUE,message=FALSE, warning=FALSE,comment=" ",tidy=TRUE,strip.white=FALSE,collapse=TRUE}
+Loading("pml_training.csv","pml_testing.csv")
+#Processing & training model on training dataset
+pprocess(trainfull)
+traindata(trainfull)
+#Predicting training dataset, results of the trained model
+predictdata()
+#Key variables that contribute to the model and predictions
+varImp(tread)
+#Processing test dataset
+pprocess(testfull)
+#Predicting test dataset and results
+predictdata()
+#Key variables that contribute to the model and predictions
+varImp(tread)
+```
+**Results:** When comparing the results of the predicted value to the actual value in the training data set, the predictions match one for one. This seems to indicate that the final model-"mtry2", is a good fit. Further testing the model with the test data provided results with sensitivity and specificity values close to that of the training set. The variables that contributed to predicting the values for test and the training values, have the same level of importance in both data sets. The model thus created seems to be stable.
+**Environment:**
+1. OS: Windows 10; Tool: R version 3.2.5; R Studio version 0.99.893; Publishing tool: RPubs, HTML
+4. Data: With thanks to source: http://groupware.les.inf.puc-rio.br/har. Reference: Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. Read more: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz49Qq0gDZE 
+6. Analyst: Uma Venkataramani; Date of Analysis: May 2016 
